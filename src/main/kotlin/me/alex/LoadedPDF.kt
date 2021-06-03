@@ -6,7 +6,7 @@ import net.dv8tion.jda.api.entities.MessageEmbed
 import org.apache.pdfbox.pdmodel.PDDocument
 import java.awt.Color
 
-class LoadedPDF( val pdf: PDDocument, author: String, rateLimit: Long, var message: Message) {
+class LoadedPDF( val pdf: PDDocument, author: String, rateLimit: Long, val message: Message) {
     var expiry = System.currentTimeMillis() + timeout
     var rateLimit: Long = rateLimit
         private set

@@ -11,18 +11,22 @@ import net.dv8tion.jda.api.JDABuilder
 import net.dv8tion.jda.api.entities.*
 import net.dv8tion.jda.api.events.message.react.MessageReactionAddEvent
 import net.dv8tion.jda.api.hooks.AnnotatedEventManager
+import org.apache.pdfbox.io.MemoryUsageSetting
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.rendering.PDFRenderer
 import java.awt.Color
 import java.io.*
 import java.net.URL
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.regex.Pattern
 import javax.imageio.ImageIO
 import kotlin.collections.ArrayList
 import kotlin.concurrent.thread
 
 val pdfs = HashSet<LoadedPDF>()
-const val timeout: Long = 5000
+val service: ExecutorService = Executors.newCachedThreadPool()
+const val timeout: Long = 1000 * 300
 const val rightArrow = "U+27A1"
 const val leftArrow = "U+2B05"
 const val cdnUserId = "838947834870366238"
@@ -32,13 +36,13 @@ var cdnChn: PrivateChannel? = null
 
 fun main() {
 
+
     System.setProperty("sun.java2d.cmm", "sun.java2d.cmm.kcms.KcmsServiceProvider")
     jda = JDABuilder.createDefault("")
             .setEventManager(AnnotatedEventManager()).addEventListeners(object : Any() {
                 @SubscribeEvent
                 fun onMessageReceived(e: MessageReceivedEvent) {
-                    pdfs.forEach {println(it)}
-                    thread(start = true) {
+                    service.submit {
                         val pattern = Pattern.compile("(https?://(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?://(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,})")
                         val matcher = pattern.matcher(e.message.contentDisplay)
                         val matches = MutableList(0) { it.toString() }
@@ -73,7 +77,7 @@ fun main() {
                 }
                 @SubscribeEvent
                 fun onReact(e: MessageReactionAddEvent) {
-                    thread(start = true) {
+                    service.submit {
                         val pdf = pdfs.find { it.message.id == e.messageId }
                         pdf?.run {
                             val time =System.currentTimeMillis()
@@ -117,7 +121,7 @@ fun sendEmbed(it: InputStream, name: String, e: MessageReceivedEvent) {
     }
 
     ByteArrayOutputStream().use { out ->
-        val doc = PDDocument.load(safeData.toByteArray() + it.readBytes())
+        val doc = PDDocument.load(ByteArrayInputStream(safeData.toByteArray() + it.readBytes()), MemoryUsageSetting.setupTempFileOnly())
         ImageIO.write(PDFRenderer(doc).renderImageWithDPI(0,100f) ,"png", out)
         ImgurRequest(imgurClientId, out.toByteArray()).queue { url ->
             e.channel.sendMessage(EmbedBuilder().setTitle("Loaded $name").setColor(Color.GREEN).setImage(url).build()).queue {
@@ -162,7 +166,6 @@ fun sendEmbedOnReaction(index: Int, pdf: LoadedPDF) {
         } else {
             pdf.message.editMessage(pdf.cachedEmbeds[index].build()).queue {
                 addReaction(pdf, it, index)
-
             }
             cache(pdf,index)
         }
@@ -194,10 +197,11 @@ fun addReaction(pdf: LoadedPDF, final: Message, index: Int) {
     clean(System.currentTimeMillis() + timeout, pdf)
 }
 fun clean(targetTime: Long, pdf: LoadedPDF) {
-    thread(true) {
+    service.submit {
+        System.gc()
         Thread.sleep(targetTime - System.currentTimeMillis())
         if (pdf.expiry  <= System.currentTimeMillis()) { // pdf expired so delete otherwise just leave it alone
-            println(pdfs.contains(pdf))
+            pdf.pdf.close()
             pdfs.remove(pdf)
         }
     }
